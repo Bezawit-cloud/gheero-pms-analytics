@@ -1,0 +1,26 @@
+# Environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Raw data stays local only — never commit the raw dataset
+data/raw/
+
+# Allow the one required deliverable CSV, block everything else in data/
+data/*.csv
+!data/analytical_dataset.csv
+!data/.gitkeep
+
+# Models (large binary artifacts)
+models/*.pkl
+models/*.joblib
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
