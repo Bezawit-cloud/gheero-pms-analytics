@@ -2,6 +2,15 @@
 
 Predict whether a project task will be overdue using historical project management data.
 
+## Branching
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production — tagged releases |
+| `staging` | Integration branch — `dev-data` and `dev-eda-modeling` are merged here for end-to-end testing before release |
+| `dev-data` | Phase 1 — data & infrastructure |
+| `dev-eda-modeling` | Phase 2 — EDA & modeling |
+
 ## Local Setup
 
 ```bash
