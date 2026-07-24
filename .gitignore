@@ -1,4 +1,3 @@
-# Team 1 - gitignore
 __pycache__/
 *.pyc
 *.pyo
@@ -11,3 +10,4 @@ data/*.csv
 models/*
 !models/.gitkeep
 !docs/contributing.pdf
+/venv
