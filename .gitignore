@@ -1,0 +1,13 @@
+# Team 1 - gitignore
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.env
+*.pkl
+*.pdf
+*.png
+data/*.csv
+models/*
+!models/.gitkeep
+!docs/contributing.pdf
