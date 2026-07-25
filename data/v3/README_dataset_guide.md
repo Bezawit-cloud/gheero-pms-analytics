@@ -100,5 +100,3 @@ for more data._
    something people write _after_ a task is already late, not before, so we left that out
    entirely. Full details, including things we tested and rejected, are in `docs/handoff_H2.md`
    if you're curious.
-
-Questions? Ask Yakob — this file was built and validated by him as part of Phase 1.
