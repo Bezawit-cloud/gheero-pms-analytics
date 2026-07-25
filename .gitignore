@@ -10,3 +10,4 @@ models/*
 !models/.gitkeep
 !docs/contributing.pdf
 /venv
+.pytest_cache/

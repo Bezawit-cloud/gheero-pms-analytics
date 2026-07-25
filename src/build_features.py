@@ -10,6 +10,7 @@ Usage:
 
 import os
 import argparse
+from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
@@ -27,7 +28,8 @@ from src.feature_engineering import (
     fill_global_mean,
 )
 
-DB_URL = 'postgresql://postgres:12345678@172.31.237.108:5432/tasktracker_clone'
+load_dotenv()
+DB_URL = os.getenv('DB_URL')
 
 STATUS_ORDER = {
     'not_started': 0, 'ongoing': 1, 'in_progress': 1,
