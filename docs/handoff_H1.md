@@ -137,3 +137,21 @@ needing to request additional extraction later.
 - `calculated_overdue` is `CURRENT_DATE`-dependent for incomplete tasks and will drift slightly
   on re-run (documented behavior — see Week-0 verification handoff). Treat exact percentages as
   directional; re-verify before quoting in a final report.
+
+---
+
+## Validation Results (2026-07-25)
+
+Final validation performed directly on the generated `data/analytical_dataset.csv`:
+
+| Check                             | Result                                                                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Total data rows                   | 13,895 (matches `tasks_task` base count exactly)                                                                                                                                                                                           |
+| Unique `task_id` values           | 13,895 (zero duplicates)                                                                                                                                                                                                                   |
+| Rows with empty `task_id`         | 0                                                                                                                                                                                                                                          |
+| Column count consistency          | 27/27 columns on every row, verified via CSV-aware parser (note: naive comma-splitting tools like `awk -F','` will misreport this due to correctly-quoted commas inside `task_name` — verified this is proper CSV quoting, not corruption) |
+| `calculated_overdue` distribution | true: 3,422 / false: 4,815 / undetermined: 5,658                                                                                                                                                                                           |
+| `undetermined` count cross-check  | Exact match to Category 2 data-quality finding (5,658 completed tasks missing `actual_end_date`)                                                                                                                                           |
+| `department_source` distribution  | direct: 1,493 (10.74%) / position_derived: 12,402 (89.26%) — exact match to Week-0's original 89.26% null-direct-department finding                                                                                                        |
+
+**Status: validated and ready for Phase 2 handoff.**
