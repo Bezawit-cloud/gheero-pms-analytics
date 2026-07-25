@@ -4,8 +4,6 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 /pdf
-*.png
-data/*.csv
 models/*
 !models/.gitkeep
 !docs/contributing.pdf
