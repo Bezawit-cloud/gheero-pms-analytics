@@ -124,14 +124,29 @@ Build flow:
 
 ## Target Definition
 
-`calculated_overdue` is 1 when either:
+`calculated_overdue` uses a three-tier approach to handle the missing `actual_end_date` problem:
 
-- task is `completed` AND `actual_end_date > end_date` (completed late), OR
-- task is NOT in `{completed, terminated, archived}` AND `end_date < today` (still open past deadline)
+- **Tier 1** — `actual_end_date` exists: `actual_end_date > end_date` → overdue
+- **Tier 2** — no `actual_end_date`, but `tasks_task_history` has a `status='completed'` snapshot: use the **first** occurrence as the inferred completion date and compare to `end_date`
+- **Tier 3** — no `actual_end_date`, no history signal: use `updated_date` as the best available proxy
+- Open tasks (not `completed`, `terminated`, or `archived`) whose `end_date < '2026-07-14'` → overdue
 
-Otherwise 0.
+**Why three tiers:** ~5,658 completed tasks (43%) have NULL `actual_end_date`. The v1 default of "not overdue" for these likely undercounts true overdue rate. Only 231 of the 5,658 have a `status='completed'` trace in the history table; the remaining 5,427 have zero history rows (bulk-loaded directly to the database). For those, `updated_date` is the best available proxy.
 
-**Important — cutoff sensitivity:** The current implementation uses `pd.Timestamp.today()` (dynamic) for the open-task rule. For reproducible modeling, a fixed cutoff date (e.g., `'2026-07-14'`) should be used instead. This applies to all 5 occurrences of `pd.Timestamp.today()` and `CURRENT_DATE` across `src/v1/feature_engineering.py`, `src/v1/build_features.py`, and the SQL queries in `load_department_aggregates`, `load_employee_aggregates`, and `load_position_aggregates`.
+**Confidence tracking (`target_source`):** Each row includes a `target_source` column
+indicating how its label was determined:
+
+| target_source | Method | Count | Confidence |
+|---|---|---|---|
+| `actual_end_date` | Tier 1 — direct comparison | ~7,444 | High |
+| `history_completion` | Tier 2 — first status='completed' from history | 231 | High |
+| `updated_date` | Tier 3 — updated_date as proxy | ~5,427 | Low (approximate) |
+| `open_task` | Open task past fixed cutoff | ~164 | High |
+| `status_based` | Archived, terminated, or within deadline | remainder | High |
+
+This allows modeling teams to filter or weight rows by label confidence.
+
+**Cutoff date:** All date comparisons use `'2026-07-14'` (fixed) instead of `CURRENT_DATE`/`today()` to ensure reproducible labels. The old approach drifted day-to-day as more tasks crossed their deadline.
 
 **Target distribution:**
 
@@ -366,7 +381,7 @@ Source: [`docs/handoff_H5.md`](../docs/handoff_H5.md), [`sql/v1/data_quality_che
 | Null `status` | PASS | 0% |
 | Null `start_date` | PASS | 0% |
 | Null `end_date` | PASS | 0% |
-| Null `actual_end_date` (completed only) | PASS | 2.1% — expected (tasks closed without recording completion) |
+| Null `actual_end_date` (completed only) | WARN | 43.2% — resolved via three-tier target: history first-completed timestamp (231 tasks) + updated_date fallback (5,427 tasks) |
 | Null department_id (resolved) | PASS | 2.7% — filled via global mean |
 | Null position_id | PASS | 4.8% — mapped to UNKNOWN |
 | Duplicate task IDs | PASS | 0 |
