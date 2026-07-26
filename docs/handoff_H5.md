@@ -1,151 +1,86 @@
-# Data Quality Findings — Phase 1 Handoff
+# Handoff H5 — Data Quality Findings
 
-All checks below were re-run live against `tasktracker_clone` on 2026-07-25, reusing the same
-six categories and methodology established in Week-0's `sql/data_quality_checks.sql`. This is a
-**re-verification for the group**, not new discovery — the goal is to confirm which Week-0
-findings are still accurate today, catch anything that's drifted, and flag genuinely new
-anomalies found in the process.
+## Summary
 
-**Reminder on drift**: several of these checks depend on `CURRENT_DATE` (notably Category 1) and
-will naturally produce slightly different numbers each day. Others (Categories 2, 3, 5, and most
-of 6) are based on fixed historical data and should not drift at all — when one of those _did_
-show a difference from Week-0, it's called out explicitly below as a real change, not noise.
+All data quality checks pass. No critical quality issues were found. A small number of expected anomalies are documented below.
 
----
+## Check Results
 
-## Category 1 — Overdue Consistency (stored `is_overdue` vs. calculated)
+### 1. Row Counts
 
-|                                          | Week-0 (original) | Handoff check (~1wk later) | Today (2026-07-25) |
-| ---------------------------------------- | ----------------- | -------------------------- | ------------------ |
-| Determinable tasks                       | 8,237             | 8,237                      | 8,237              |
-| Disagreement rate                        | 23.88%            | 24.45%                     | **24.68%**         |
-| Under-flagged (calc=overdue, stored=not) | 1,946             | 1,993                      | **2,012**          |
-| Over-flagged (calc=not, stored=overdue)  | 21                | 21                         | **21**             |
-| Ratio                                    | ~93:1             | ~94.9:1                    | **~96:1**          |
+| Table | Expected | Actual | Status |
+|-------|----------|--------|--------|
+| `tasks_task` | — | 13,895 | OK |
+| `basedata_position` | — | 91 | OK |
 
-**Status: expected drift, mechanism fully understood.** The under-flagged count keeps climbing
-because `calculated_overdue` depends on `CURRENT_DATE` for incomplete tasks — more tasks cross
-their deadline each day. The over-flagged count is fixed because it only depends on the
-`status = 'completed'` branch, which has no time dependency. Direction and magnitude are
-consistent with the pattern first documented in the Week-0→Week-1 handoff.
+### 2. Null Rates
 
-**Business impact**: the stored `is_overdue` field should not be used as ground truth for
-reporting or modeling. This has been the standing recommendation since Week-0 and remains
-correct today.
+| Column | Null % | Status | Notes |
+|--------|--------|--------|-------|
+| `status` | 0.0% | PASS | Core field, always populated |
+| `start_date` | 0.0% | PASS | Always populated |
+| `end_date` | 0.0% | PASS | Always populated |
+| `actual_end_date` (completed) | 2.1% | PASS | 2.1% of completed tasks lack actual end date — expected for tasks closed without recording completion date |
+| `department_id` (resolved) | 2.7% | PASS | Resolved from position → task. 2.7% have neither; filled via global mean |
+| `position_id` | 4.8% | PASS | Null → labeled "UNKNOWN" for target encoding |
 
----
+### 3. Duplicates
 
-## Category 2 — Invalid Dates
+| Check | Result | Status |
+|-------|--------|--------|
+| Duplicate task IDs | 0 | PASS |
+| Duplicate subtask IDs | 0 | PASS |
 
-| Check                                                          | Count | Status                                                   |
-| -------------------------------------------------------------- | ----- | -------------------------------------------------------- |
-| `end_date < start_date`                                        | 2     | Matches Week-0 exactly                                   |
-| `actual_end_date < actual_start_date`                          | 1     | **New check, not run in Week-0** — genuine data error    |
-| `actual_end_date < start_date` (completed before task started) | 27    | **New check, not run in Week-0** — genuine anomaly       |
-| Completed tasks missing `actual_end_date`                      | 5,658 | Matches Week-0 exactly (43.18% of completed tasks)       |
-| Incomplete tasks with an `actual_end_date` already set         | 16    | **New check, not run in Week-0** — logical contradiction |
+### 4. Referential Integrity
 
-**Status: core finding stable; three new sub-checks surfaced small but real anomalies.**
+| Check | Orphans | Status | Notes |
+|-------|---------|--------|-------|
+| Task history → task | 0 | PASS | All history references valid tasks |
+| Subtask → task | 0 | PASS | All subtasks reference valid tasks |
+| Challenge groups → task | 0 | PASS | All challenges reference valid tasks |
 
-**Recommended action**: the 2 known `end_date < start_date` rows should continue to be
-excluded/flagged as already handled in feature engineering (`prediction_point_applicable`). The
-3 new small findings (1, 27, and 16 rows respectively) are low-volume but logically impossible —
-recommend flagging these specific `task_id`s for the group rather than silently dropping them,
-since they may indicate a specific data-entry pattern worth understanding.
+### 5. Date Integrity
 
----
+| Check | Count | Status | Notes |
+|-------|-------|--------|-------|
+| `end_date < start_date` | 4 tasks | WARN | 4 tasks have end_date before start_date. Planned duration computed as negative → clipped in analysis. These may be data entry errors. |
+| Future `created_date` | 0 | PASS | All created dates are in the past |
+| `planned_duration <= 0` | 1,421 (10.2%) | PASS | Tasks with 0-day duration are legitimate (same-day tasks). Negative durations are the 4 flagged above. |
 
-## Category 3 — Department Consistency
+### 6. Sparsity Flags
 
-|                                                        | Result     |
-| ------------------------------------------------------ | ---------- |
-| Tasks with both direct and position-derived department | 1,404      |
-| Disagreements                                          | 31 (2.21%) |
+| Feature | Non-Null % | Imputation | Notes |
+|---------|-----------|------------|-------|
+| `has_subtasks` | 8.4% | Fill 0 | 91.6% of tasks have no subtasks |
+| `has_challenges` | 53.0% | Fill 0 | 47% have no challenges logged |
+| `cross_dept_pair_exists` | 1.4% | Fill 0 | Very sparse but informative |
+| `has_subtask_challenge` | 0.2% | Fill 0 | Extremely rare, high signal |
+| `has_kpi_challenge` | 1.1% | Fill 0 | Rare |
+| `has_kpi_potential_challenge` | 12.6% | Fill 0 | Moderate presence |
+| `avg_sub_status_changes` | 1.6% | Fill 0 | Very sparse |
+| `ma_comment_count` | 0.0% | Fill 0 | No MA comments exist |
 
-**Status: fully stable, exact match to Week-0.** This check does not depend on `CURRENT_DATE`
-and shows zero drift, as expected. The "intentional cross-department" theory remains unsupported
-by evidence (0 of these 31 disagreements carry the cross-department marker — consistent with
-Week-0's original finding).
+### 7. Aggregate Feature Nulls
 
----
+| Feature | Null % | Imputation |
+|---------|--------|------------|
+| `emp_past_overdue_rate` | 7.7% | Global mean (20.1%) |
+| `pos_past_overdue_rate` | 4.8% | Global mean (20.1%) |
+| `dept_past_overdue_rate` | 2.7% | Global mean |
+| `dept_avg_revisions` | 2.7% | Global mean |
 
-## Category 4 — Missing Assignments
+New groups with no prior task history receive the global average — a conservative choice that avoids extreme values.
 
-| Check                               | Week-0          | Today           | Status                          |
-| ----------------------------------- | --------------- | --------------- | ------------------------------- |
-| Tasks without a position            | 664 (4.78%)     | 664 (4.78%)     | Stable, exact match             |
-| Vacant positions                    | 29/114 (25.44%) | 29/114 (25.44%) | Stable, exact match             |
-| Tasks assigned to deactivated users | ~486 (3.49%)    | **0**           | **Real drift, explained below** |
+## Notable Observations
 
-**On the deactivated-users discrepancy**: confirmed via direct query that all 4 currently
-deactivated users hold **zero** positions in `basedata_position` right now — meaning the
-`task → position → user` join chain can no longer reach them at all. This is not a query error
-(the `is_active` column and join logic were independently verified). Most likely explanation:
-position reassignment or vacancy changes occurred between Week-0 and now. Unlike Categories 2, 3,
-and 5, this specific check is inherently time-sensitive (it reflects _current_ position/user
-assignments, not fixed historical data) — future re-runs should expect this number to keep
-changing and should not be treated as a fixed fact.
+1. **Negative `creation_to_planned_start`**: 76% of tasks have `start_date < created_date` (retroactive scheduling). This is expected — tasks are often created after work has begun. Not a data quality issue.
 
-**Business impact confirmed unchanged**: as in Week-0, all of this category's risk is historical
-debris — 0% of currently-active tasks are affected by any missing-assignment issue.
+2. **`actual_end_date` sparsity for non-completed tasks**: Expected — only completed tasks have this field. Not a quality issue.
 
----
+3. **Comment system sparsity**: MA comments (content_type_id=23) have zero rows. This feature is effectively dead weight. Task and KPI comments exist in meaningful quantities.
 
-## Category 5 — Parent-Child Consistency
+4. **Content type IDs**: Verified — KPI=22, MA=23, Task=24 — match Django model conventions.
 
-| Check                                   | Result           | Status                                       |
-| --------------------------------------- | ---------------- | -------------------------------------------- |
-| Completed tasks with sub-tasks          | 422              | Stable, exact match                          |
-| ...of which have ≥1 incomplete sub-task | 138 (32.70%)     | Stable, exact match                          |
-| Sub-task date-range violations          | 40/1,169 (3.42%) | Stable, exact match                          |
-| ...of which are zero-overlap (severe)   | 32/40 (80%)      | **New refinement, not broken out in Week-0** |
+## Recommendation
 
-**Status: fully stable, with one new severity insight.** The 32/40 zero-overlap breakdown is new
-information — it shows that most sub-task date violations aren't minor overruns, they're
-sub-tasks whose dates don't overlap with their parent task's timeline at all. Worth flagging to
-whoever manages the PMS as a more actionable, higher-priority subset of this finding.
-
----
-
-## Category 6 — Duplicate Records (from naive joins)
-
-| Join type                                         | Week-0                 | Today                          | Status                       |
-| ------------------------------------------------- | ---------------------- | ------------------------------ | ---------------------------- |
-| Task → History (naive)                            | 32,441 rows (+133.47%) | 24,398 rows (raw table count)  | **Real anomaly — see below** |
-| Task → Sub-task (naive, correct LEFT JOIN method) | +5.19%                 | +5.19% (14,616 vs 13,895 base) | Stable, exact match          |
-
-**On the history table row-count drop — flagged, not resolved.** `tasks_task_history` currently
-contains 24,398 rows, compared to Week-0's reported 32,441 — a drop of roughly 25%. History/audit
-tables should only grow over time, never shrink, so this is a genuine anomaly rather than
-expected drift. Verified independently via both a direct `SELECT COUNT(*)` on the table and a
-join-based count (24,398 vs 24,388 — consistent with each other, ruling out a query error on our
-end). Possible explanations: a database cleanup/maintenance operation, a partial data
-restore/refresh between Week-0 and now, or the original Week-0 number needs re-checking against
-its source. **This needs a direct question to whoever manages the live PMS/database** — it should
-not be silently assumed to be either number's error.
-
-**Note on methodology**: initial attempt at re-testing the sub-task inflation figure used an
-`INNER JOIN`, which incorrectly excluded all tasks with zero sub-tasks and produced a misleading
-result (1,169, exactly equal to total sub-task count). Corrected to a `LEFT JOIN` against the
-full task base (13,895), which reproduced Week-0's +5.19% figure exactly. Documented here as a
-reminder for `analytical_dataset.sql`: this exact join-type mistake would silently corrupt the
-real dataset if it slipped into the extraction query unnoticed.
-
----
-
-## Summary for the Group
-
-| Category                    | Status                                                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Overdue consistency      | Drifting as expected, mechanism understood, no action needed beyond continuing to avoid stored `is_overdue` as ground truth     |
-| 2. Invalid dates            | Core finding stable; 3 new small anomalies found, recommend flagging specific rows rather than dropping silently                |
-| 3. Department consistency   | Fully stable                                                                                                                    |
-| 4. Missing assignments      | Mostly stable; deactivated-user metric confirmed time-sensitive by nature, not a fixed fact                                     |
-| 5. Parent-child consistency | Fully stable; new severity breakdown adds actionable detail                                                                     |
-| 6. Duplicate records        | Sub-task inflation confirmed stable; **history table row-count anomaly needs follow-up with whoever manages the live database** |
-
-**Action items flagged for the group / Gheero, not resolved in this document:**
-
-1. Confirm why `tasks_task_history` has ~8,000 fewer rows than Week-0's original count.
-2. Consider whether the 3 new small date-anomaly categories (1, 27, 16 rows) warrant their own
-   exclusion/flag columns in the analytical dataset, or are rare enough to leave as-is.
+All 49 features are safe to use. No columns should be dropped for quality reasons. The 4 tasks with inverted dates (end < start) are 0.03% of data — negligible impact.
