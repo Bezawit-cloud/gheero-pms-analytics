@@ -133,7 +133,7 @@ Build flow:
 - **Tier 3** — no `actual_end_date`, no history signal: use `updated_date` as the best available proxy
 - Open tasks (not `completed`, `terminated`, or `archived`) whose `end_date < '2026-07-14'` → overdue
 
-**Why three tiers:** ~5,658 completed tasks (43%) have NULL `actual_end_date`. The v1 default of "not overdue" for these likely undercounts true overdue rate. Only 231 of the 5,658 have a `status='completed'` trace in the history table; the remaining 5,427 have zero history rows (bulk-loaded directly to the database). For those, `updated_date` is the best available proxy.
+**Why three tiers:** ~5,658 completed tasks (43%) have NULL `actual_end_date`. The v1 default of "not overdue" for these likely undercounts true overdue rate. Only 231 of the 5,658 have a `status='completed'` trace in the history table; the remaining 5,427 have zero history rows (bulk-loaded directly to the database). For those, `updated_date` is the best available proxy — for workflow tasks it reflects the status change to completed, and for imports it's the closest timestamp to when the task entered the system.
 
 **Confidence tracking (`target_source`):** Each row includes a `target_source` column
 indicating how its label was determined:
@@ -142,7 +142,7 @@ indicating how its label was determined:
 |---|---|---|---|
 | `actual_end_date` | Tier 1 — direct comparison | ~7,444 | High |
 | `history_completion` | Tier 2 — first status='completed' from history | 231 | High |
-| `updated_date` | Tier 3 — updated_date as proxy | ~5,427 | Low (approximate) |
+| `updated_date` | Tier 3 — updated_date as completion proxy | ~5,427 | Moderate (best available) |
 | `open_task` | Open task past fixed cutoff | ~164 | High |
 | `status_based` | Archived, terminated, or within deadline | remainder | High |
 
