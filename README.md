@@ -8,7 +8,7 @@ Predict whether a project task will be overdue using historical project manageme
 |--------|---------|
 | `main` | Production — tagged releases |
 | `staging` | Integration branch — `dev-data` and `dev-eda-modeling` are merged here for end-to-end testing before release |
-| `dev-data` | Phase 1 — data & infrastructure |
+| `dev-data` | Data tasks — building the analytical dataset (CSV), SQL queries, data quality checks, and all data preparation for modeling |
 | `dev-eda-modeling` | Phase 2 — EDA & modeling |
 
 ## Local Setup

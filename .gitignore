@@ -1,13 +1,11 @@
-# Team 1 - gitignore
 __pycache__/
 *.pyc
 *.pyo
 .ipynb_checkpoints/
 .env
-*.pkl
-*.pdf
-*.png
-data/*.csv
+/pdf
 models/*
 !models/.gitkeep
 !docs/contributing.pdf
+/venv
+.pytest_cache/
