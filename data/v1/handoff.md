@@ -9,9 +9,11 @@ Two analysis-ready datasets are produced:
 | Variant | File | Rows | Cols | Purpose |
 |---|---|---|---|---|
 | Creation-time | `data/v1/dataset_at_creation.csv` | 13,895 | 36 | Features known at task assignment |
+| Creation-time (fixed target) | `data/v1/dataset_at_creation_fixed_end_date.csv` | 13,895 | 29 | Same but with three-tier target (47.8% overdue) |
 | Halfway | `data/v1/dataset_at_halfway.csv` | 13,895 | 51 | Creation + 15 accumulation features (available at midpoint) |
+| Halfway (fixed target) | `data/v1/dataset_at_halfway_fixed_end_date.csv` | 13,895 | 44 | Same but with three-tier target (47.8% overdue) |
 
-Both share the same 13,895 tasks and the same target `calculated_overdue` (20.1% overdue rate).
+Both share the same 13,895 tasks and the same target `calculated_overdue` (47.8% overdue rate).
 
 ## Data Sources (15 Tables)
 
@@ -148,22 +150,12 @@ This allows modeling teams to filter or weight rows by label confidence.
 
 **Cutoff date:** All date comparisons use `'2026-07-14'` (fixed) instead of `CURRENT_DATE`/`today()` to ensure reproducible labels. The old approach drifted day-to-day as more tasks crossed their deadline.
 
-**Target distribution:**
+**Target distribution (with three-tier fix):**
 
 | Class | Count | % |
 |---|---|---|
-| Not Overdue (0) | 11,102 | 79.9% |
-| Overdue (1) | 2,793 | 20.1% |
-
-**Status vs overdue rate:**
-
-| Status | Count | % of All | Overdue Rate |
-|---|---|---|---|
-| not_started | 133 | 1.0% | 79.7% |
-| ongoing | 31 | 0.2% | 100.0% |
-| completed | 13,102 | 94.3% | 20.3% |
-| terminated | 270 | 1.9% | 0.0% |
-| archived | 359 | 2.6% | 0.0% |
+| Not Overdue (0) | 7,252 | 52.2% |
+| Overdue (1) | 6,643 | 47.8% |
 
 ## Feature Inventory — All 49 Features
 
@@ -185,7 +177,7 @@ All use `ordinal_encode_status(fallback=1)` — any null/unseen value maps to 1 
 |---|---|---|---|---|---|
 | `planned_duration` | `end_date - start_date` in days | None needed | 0% | 0 | Longer = more complex work. **Edge case:** 2 tasks have negative duration (end < start), 1,421 have zero (same-day tasks) |
 | `creation_to_planned_start` | `start_date - created_date` in days | None needed | 0% | 0 | **76% negative** — retroactive scheduling (tasks created after work began), expected behavior |
-| `days_since_update` | `today - updated_date` in days | None needed (always present) | 0% | 0 | Only in halfway dataset. Stale tasks correlate with overdue. Range: 10–457 days |
+| `days_since_update` | `cutoff - updated_date` in days | None needed (always present) | 0% | 0 | Only in halfway dataset. Stale tasks correlate with overdue. Range: 10–457 days |
 | `created_dow` | `EXTRACT(DOW FROM created_date)` | None needed | 0% | 0 | Weekly operating patterns |
 | `created_is_weekend` | 1 if DOW >= 5 | None needed | 0% | 0 | Weak timing signal |
 | `created_is_friday` | 1 if DOW == 4 | None needed | 0% | 0 | End-of-week batching effects |
@@ -206,7 +198,7 @@ All use `ordinal_encode_status(fallback=1)` — any null/unseen value maps to 1 
 |---|---|---|---|---|---|
 | `num_revisions` | COUNT of history rows per task | Fill 0 | ~8% | 0 | Churn/instability indicator |
 | `revision_frequency` | `num_revisions / task_age_days` | Fill 0 | ~8% | 0 | Normalized revision rate |
-| `revision_recency` | `today - MAX(history_date)` | Fill 0 | ~8% | 0 | How recently the task was changed |
+| `revision_recency` | `cutoff - MAX(history_date)` | Fill 0 | ~8% | 0 | How recently the task was changed |
 
 **Leakage risk:** These must be computed using only history up to the prediction cutoff.
 
