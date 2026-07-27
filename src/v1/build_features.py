@@ -147,13 +147,31 @@ def load_base_tasks(engine):
     return base
 
 
-def compute_derived_features(base):
-    for col in ['start_date', 'end_date', 'actual_end_date']:
-        base[col] = pd.to_datetime(base[col])
-    for col in ['created_date', 'updated_date']:
-        base[col] = base[col].dt.tz_localize(None)
+def load_first_completed(engine):
+    sql = """
+        SELECT
+            history_relation_id AS task_id,
+            MIN(history_date) AS first_completed_at
+        FROM tasks_task_history
+        WHERE status = 'completed'
+        GROUP BY history_relation_id
+    """
+    fc = q(sql, engine)
+    print(f'Tasks with completion history: {len(fc)}')
+    return fc
 
-    base['calculated_overdue'] = compute_target(base)
+
+def compute_derived_features(base, first_completed=None):
+    for col in ['start_date', 'end_date', 'actual_end_date', 'created_date', 'updated_date']:
+        ser = pd.to_datetime(base[col], errors='coerce')
+        if hasattr(ser.dt, 'tz') and ser.dt.tz is not None:
+            base[col] = ser.dt.tz_localize(None)
+        else:
+            base[col] = ser
+
+    target_result = compute_target(base, first_completed)
+    base['calculated_overdue'] = target_result['calculated_overdue']
+    base['target_source'] = target_result['target_source']
     base['planned_duration'] = compute_planned_duration(base)
     base['creation_to_planned_start'] = compute_creation_to_planned_start(base)
     base['days_since_update'] = compute_days_since_update(base)
@@ -179,10 +197,11 @@ def load_revisions(engine, base):
     rev = q(sql, engine)
     rev['last_revision'] = rev['last_revision'].dt.tz_localize(None)
 
-    task_age_map = (pd.Timestamp.today().normalize() - base.set_index('id')['created_date']).dt.days
+    cutoff = pd.Timestamp('2026-07-14').normalize()
+    task_age_map = (cutoff - base.set_index('id')['created_date']).dt.days
     rev['task_age_days'] = rev['task_id'].map(task_age_map).fillna(0).clip(lower=1)
     rev['revision_frequency'] = rev['num_revisions'] / rev['task_age_days']
-    rev['revision_recency'] = (pd.Timestamp.today().normalize() - rev['last_revision']).dt.days
+    rev['revision_recency'] = (cutoff - rev['last_revision']).dt.days
 
     base = base.merge(
         rev[['task_id', 'num_revisions', 'revision_frequency', 'revision_recency']],
@@ -294,9 +313,10 @@ def load_department_aggregates(engine, base):
             COALESCE(p.department_id, t.department_id) AS dept_id,
             COUNT(*) AS dept_task_count,
             AVG(CASE
-                WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
                 WHEN t.status NOT IN ('completed','terminated','archived')
-                     AND t.end_date < CURRENT_DATE THEN 1
+                     AND t.end_date < '2026-07-14'::date THEN 1
                 ELSE 0
             END) AS dept_past_overdue_rate,
             AVG(COALESCE(rev_cnt.num_revisions, 0)) AS dept_avg_revisions
@@ -326,9 +346,10 @@ def load_employee_aggregates(engine, base):
         SELECT
             p.user_id AS assignee_id,
             AVG(CASE
-                WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
                 WHEN t.status NOT IN ('completed','terminated','archived')
-                     AND t.end_date < CURRENT_DATE THEN 1
+                     AND t.end_date < '2026-07-14'::date THEN 1
                 ELSE 0
             END) AS emp_past_overdue_rate
         FROM tasks_task t
@@ -354,9 +375,10 @@ def load_position_aggregates(engine, base):
         SELECT
             t.position_id,
             AVG(CASE
-                WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+                WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
                 WHEN t.status NOT IN ('completed','terminated','archived')
-                     AND t.end_date < CURRENT_DATE THEN 1
+                     AND t.end_date < '2026-07-14'::date THEN 1
                 ELSE 0
             END) AS pos_past_overdue_rate
         FROM tasks_task t
@@ -533,7 +555,8 @@ def encode_features(base):
 def build_dataset(engine):
     print('=== Loading base tasks ===')
     base = load_base_tasks(engine)
-    base = compute_derived_features(base)
+    first_completed = load_first_completed(engine)
+    base = compute_derived_features(base, first_completed)
 
     print('=== Loading revisions ===')
     base = load_revisions(engine, base)
@@ -610,7 +633,7 @@ def build_dataset(engine):
         final_features_clean = final_features
 
     # Filter to existing columns
-    dataset = base[['id', 'calculated_overdue'] + [c for c in final_features_clean if c in base.columns]].copy()
+    dataset = base[['id', 'calculated_overdue', 'target_source'] + [c for c in final_features_clean if c in base.columns]].copy()
 
     print(f'Final dataset shape: {dataset.shape}')
     print(f'Features: {len([c for c in final_features_clean if c in base.columns])}')

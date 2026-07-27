@@ -37,18 +37,10 @@ WITH base AS (
         t.department_id,
         CASE WHEN t.derived_from_cross_department_assignment_id IS NOT NULL THEN 1 ELSE 0 END AS is_cross_dept,
 
-        -- Target
-        CASE
-            WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
-            WHEN t.status NOT IN ('completed', 'terminated', 'archived')
-                 AND t.end_date < CURRENT_DATE THEN 1
-            ELSE 0
-        END AS calculated_overdue,
-
         -- Derived features
         (t.end_date - t.start_date) AS planned_duration,
         (t.start_date - t.created_date) AS creation_to_planned_start,
-        (CURRENT_DATE - t.updated_date::date) AS days_since_update,
+        ('2026-07-14'::date - t.updated_date::date) AS days_since_update,
         EXTRACT(DOW FROM t.created_date)::int AS created_dow,
         CASE WHEN EXTRACT(DOW FROM t.created_date)::int >= 5 THEN 1 ELSE 0 END AS created_is_weekend,
         CASE WHEN EXTRACT(DOW FROM t.created_date)::int = 4 THEN 1 ELSE 0 END AS created_is_friday,
@@ -62,7 +54,17 @@ WITH base AS (
     WHERE t.start_date IS NOT NULL AND t.end_date IS NOT NULL
 ),
 
--- ── 2. Revisions (tasks_task_history) ─────────────────────────────────────
+-- ── 2. First Completion Timestamp from History ────────────────────────────
+first_completed AS (
+    SELECT
+        history_relation_id AS task_id,
+        MIN(history_date) AS first_completed_at
+    FROM tasks_task_history
+    WHERE status = 'completed'
+    GROUP BY history_relation_id
+),
+
+-- ── 3. Revisions (tasks_task_history) ─────────────────────────────────────
 revisions AS (
     SELECT
         history_relation_id AS task_id,
@@ -130,8 +132,9 @@ dept_agg AS (
         COALESCE(p.department_id, t.department_id) AS dept_id,
         COUNT(*) AS dept_task_count,
         AVG(CASE
-            WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
-            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < CURRENT_DATE THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
+            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < '2026-07-14'::date THEN 1
             ELSE 0
         END) AS dept_past_overdue_rate,
         AVG(COALESCE(rev_cnt.num_revisions, 0)) AS dept_avg_revisions
@@ -149,8 +152,9 @@ emp_agg AS (
     SELECT
         p.user_id AS assignee_id,
         AVG(CASE
-            WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
-            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < CURRENT_DATE THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
+            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < '2026-07-14'::date THEN 1
             ELSE 0
         END) AS emp_past_overdue_rate
     FROM tasks_task t
@@ -164,8 +168,9 @@ pos_agg AS (
     SELECT
         t.position_id,
         AVG(CASE
-            WHEN t.status = 'completed' AND t.actual_end_date > t.end_date THEN 1
-            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < CURRENT_DATE THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NOT NULL AND t.actual_end_date > t.end_date THEN 1
+            WHEN t.status = 'completed' AND t.actual_end_date IS NULL AND t.updated_date::date > t.end_date THEN 1
+            WHEN t.status NOT IN ('completed', 'terminated', 'archived') AND t.end_date < '2026-07-14'::date THEN 1
             ELSE 0
         END) AS pos_past_overdue_rate
     FROM tasks_task t
@@ -289,10 +294,33 @@ position_dept AS (
 SELECT
     b.*,
 
+    -- Target: three-tier approach for missing actual_end_date
+    CASE
+        WHEN b.status = 'completed' AND b.actual_end_date IS NOT NULL AND b.actual_end_date > b.end_date THEN 1
+        WHEN b.status = 'completed' AND b.actual_end_date IS NULL
+             AND fc.first_completed_at IS NOT NULL AND fc.first_completed_at::date > b.end_date THEN 1
+        WHEN b.status = 'completed' AND b.actual_end_date IS NULL
+             AND fc.first_completed_at IS NULL AND b.updated_date::date > b.end_date THEN 1
+        WHEN b.status NOT IN ('completed', 'terminated', 'archived')
+             AND b.end_date < '2026-07-14'::date THEN 1
+        ELSE 0
+    END AS calculated_overdue,
+
+    -- Target source: indicates which method was used for the overdue label
+    CASE
+        WHEN b.status = 'completed' AND b.actual_end_date IS NOT NULL THEN 'actual_end_date'
+        WHEN b.status = 'completed' AND b.actual_end_date IS NULL
+             AND fc.first_completed_at IS NOT NULL THEN 'history_completion'
+        WHEN b.status = 'completed' AND b.actual_end_date IS NULL THEN 'updated_date'
+        WHEN b.status NOT IN ('completed', 'terminated', 'archived')
+             AND b.end_date < '2026-07-14'::date THEN 'open_task'
+        ELSE 'status_based'
+    END AS target_source,
+
     -- Revision features
     COALESCE(r.num_revisions, 0)::int AS num_revisions,
-    COALESCE(r.num_revisions::float / NULLIF((CURRENT_DATE - b.created_date::date), 0), 0) AS revision_frequency,
-    COALESCE((CURRENT_DATE - r.last_revision::date), 0) AS revision_recency,
+    COALESCE(r.num_revisions::float / NULLIF(('2026-07-14'::date - b.created_date::date), 0), 0) AS revision_frequency,
+    COALESCE(('2026-07-14'::date - r.last_revision::date), 0) AS revision_recency,
 
     -- Subtask features
     COALESCE(s.num_subtasks, 0)::int AS num_subtasks,
@@ -359,6 +387,7 @@ SELECT
     COALESCE(pd.department_id, b.department_id) AS resolved_dept_id
 
 FROM base b
+LEFT JOIN first_completed fc ON fc.task_id = b.id
 LEFT JOIN revisions r ON r.task_id = b.id
 LEFT JOIN subtasks s ON s.task_id = b.id
 LEFT JOIN halfway_sub hs ON hs.task_id = b.id

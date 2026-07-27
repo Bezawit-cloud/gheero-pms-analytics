@@ -9,9 +9,11 @@ Two analysis-ready datasets are produced:
 | Variant | File | Rows | Cols | Purpose |
 |---|---|---|---|---|
 | Creation-time | `data/v1/dataset_at_creation.csv` | 13,895 | 36 | Features known at task assignment |
+| Creation-time (fixed target) | `data/v1/dataset_at_creation_fixed_end_date.csv` | 13,895 | 29 | Same but with three-tier target (47.8% overdue) |
 | Halfway | `data/v1/dataset_at_halfway.csv` | 13,895 | 51 | Creation + 15 accumulation features (available at midpoint) |
+| Halfway (fixed target) | `data/v1/dataset_at_halfway_fixed_end_date.csv` | 13,895 | 44 | Same but with three-tier target (47.8% overdue) |
 
-Both share the same 13,895 tasks and the same target `calculated_overdue` (20.1% overdue rate).
+Both share the same 13,895 tasks and the same target `calculated_overdue` (47.8% overdue rate).
 
 ## Data Sources (15 Tables)
 
@@ -124,31 +126,36 @@ Build flow:
 
 ## Target Definition
 
-`calculated_overdue` is 1 when either:
+`calculated_overdue` uses a three-tier approach to handle the missing `actual_end_date` problem:
 
-- task is `completed` AND `actual_end_date > end_date` (completed late), OR
-- task is NOT in `{completed, terminated, archived}` AND `end_date < today` (still open past deadline)
+- **Tier 1** — `actual_end_date` exists: `actual_end_date > end_date` → overdue
+- **Tier 2** — no `actual_end_date`, but `tasks_task_history` has a `status='completed'` snapshot: use the **first** occurrence as the inferred completion date and compare to `end_date`
+- **Tier 3** — no `actual_end_date`, no history signal: use `updated_date` as the best available proxy
+- Open tasks (not `completed`, `terminated`, or `archived`) whose `end_date < '2026-07-14'` → overdue
 
-Otherwise 0.
+**Why three tiers:** ~5,658 completed tasks (43%) have NULL `actual_end_date`. The v1 default of "not overdue" for these likely undercounts true overdue rate. Only 231 of the 5,658 have a `status='completed'` trace in the history table; the remaining 5,427 have zero history rows (bulk-loaded directly to the database). For those, `updated_date` is the best available proxy — for workflow tasks it reflects the status change to completed, and for imports it's the closest timestamp to when the task entered the system.
 
-**Important — cutoff sensitivity:** The current implementation uses `pd.Timestamp.today()` (dynamic) for the open-task rule. For reproducible modeling, a fixed cutoff date (e.g., `'2026-07-14'`) should be used instead. This applies to all 5 occurrences of `pd.Timestamp.today()` and `CURRENT_DATE` across `src/v1/feature_engineering.py`, `src/v1/build_features.py`, and the SQL queries in `load_department_aggregates`, `load_employee_aggregates`, and `load_position_aggregates`.
+**Confidence tracking (`target_source`):** Each row includes a `target_source` column
+indicating how its label was determined:
 
-**Target distribution:**
+| target_source | Method | Count | Confidence |
+|---|---|---|---|
+| `actual_end_date` | Tier 1 — direct comparison | ~7,444 | High |
+| `history_completion` | Tier 2 — first status='completed' from history | 231 | High |
+| `updated_date` | Tier 3 — updated_date as completion proxy | ~5,427 | Moderate (best available) |
+| `open_task` | Open task past fixed cutoff | ~164 | High |
+| `status_based` | Archived, terminated, or within deadline | remainder | High |
+
+This allows modeling teams to filter or weight rows by label confidence.
+
+**Cutoff date:** All date comparisons use `'2026-07-14'` (fixed) instead of `CURRENT_DATE`/`today()` to ensure reproducible labels. The old approach drifted day-to-day as more tasks crossed their deadline.
+
+**Target distribution (with three-tier fix):**
 
 | Class | Count | % |
 |---|---|---|
-| Not Overdue (0) | 11,102 | 79.9% |
-| Overdue (1) | 2,793 | 20.1% |
-
-**Status vs overdue rate:**
-
-| Status | Count | % of All | Overdue Rate |
-|---|---|---|---|
-| not_started | 133 | 1.0% | 79.7% |
-| ongoing | 31 | 0.2% | 100.0% |
-| completed | 13,102 | 94.3% | 20.3% |
-| terminated | 270 | 1.9% | 0.0% |
-| archived | 359 | 2.6% | 0.0% |
+| Not Overdue (0) | 7,252 | 52.2% |
+| Overdue (1) | 6,643 | 47.8% |
 
 ## Feature Inventory — All 49 Features
 
@@ -170,7 +177,7 @@ All use `ordinal_encode_status(fallback=1)` — any null/unseen value maps to 1 
 |---|---|---|---|---|---|
 | `planned_duration` | `end_date - start_date` in days | None needed | 0% | 0 | Longer = more complex work. **Edge case:** 2 tasks have negative duration (end < start), 1,421 have zero (same-day tasks) |
 | `creation_to_planned_start` | `start_date - created_date` in days | None needed | 0% | 0 | **76% negative** — retroactive scheduling (tasks created after work began), expected behavior |
-| `days_since_update` | `today - updated_date` in days | None needed (always present) | 0% | 0 | Only in halfway dataset. Stale tasks correlate with overdue. Range: 10–457 days |
+| `days_since_update` | `cutoff - updated_date` in days | None needed (always present) | 0% | 0 | Only in halfway dataset. Stale tasks correlate with overdue. Range: 10–457 days |
 | `created_dow` | `EXTRACT(DOW FROM created_date)` | None needed | 0% | 0 | Weekly operating patterns |
 | `created_is_weekend` | 1 if DOW >= 5 | None needed | 0% | 0 | Weak timing signal |
 | `created_is_friday` | 1 if DOW == 4 | None needed | 0% | 0 | End-of-week batching effects |
@@ -191,7 +198,7 @@ All use `ordinal_encode_status(fallback=1)` — any null/unseen value maps to 1 
 |---|---|---|---|---|---|
 | `num_revisions` | COUNT of history rows per task | Fill 0 | ~8% | 0 | Churn/instability indicator |
 | `revision_frequency` | `num_revisions / task_age_days` | Fill 0 | ~8% | 0 | Normalized revision rate |
-| `revision_recency` | `today - MAX(history_date)` | Fill 0 | ~8% | 0 | How recently the task was changed |
+| `revision_recency` | `cutoff - MAX(history_date)` | Fill 0 | ~8% | 0 | How recently the task was changed |
 
 **Leakage risk:** These must be computed using only history up to the prediction cutoff.
 
@@ -366,7 +373,7 @@ Source: [`docs/handoff_H5.md`](../docs/handoff_H5.md), [`sql/v1/data_quality_che
 | Null `status` | PASS | 0% |
 | Null `start_date` | PASS | 0% |
 | Null `end_date` | PASS | 0% |
-| Null `actual_end_date` (completed only) | PASS | 2.1% — expected (tasks closed without recording completion) |
+| Null `actual_end_date` (completed only) | WARN | 43.2% — resolved via three-tier target: history first-completed timestamp (231 tasks) + updated_date fallback (5,427 tasks) |
 | Null department_id (resolved) | PASS | 2.7% — filled via global mean |
 | Null position_id | PASS | 4.8% — mapped to UNKNOWN |
 | Duplicate task IDs | PASS | 0 |
