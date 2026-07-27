@@ -10,29 +10,74 @@ Usage:
 import pandas as pd
 import numpy as np
 
+FIXED_CUTOFF = pd.Timestamp('2026-07-14')
 
-def compute_target(df):
-    """Compute calculated_overdue target.
 
-    overdue = 1 if:
-      - status == 'completed' AND actual_end_date > end_date (completed late), OR
-      - status NOT IN (completed, terminated, archived) AND end_date < today (past deadline)
+def compute_target(df, first_completed=None):
+    """Compute calculated_overdue target and target_source using three-tier logic.
 
-    Args:
-        df: DataFrame with columns [status, actual_end_date, end_date]
+    Tier 1: actual_end_date exists -> compare directly to end_date.
+    Tier 2: no actual_end_date, but history shows status='completed' ->
+            use first_completed_at (first occurrence) as completion date.
+    Tier 3: no actual_end_date, no history -> use updated_date as proxy.
 
     Returns:
-        Series: 0/1 overdue flag
+        DataFrame with columns [calculated_overdue, target_source]
     """
-    return np.where(
-        (df['status'] == 'completed') & (df['actual_end_date'] > df['end_date']),
+    cutoff = FIXED_CUTOFF.normalize()
+    completed = df['status'] == 'completed'
+    has_actual = df['actual_end_date'].notna()
+
+    # Ensure all date columns are tz-naive datetime64 to avoid mixing tz-aware/naive
+    for col in ['actual_end_date', 'end_date', 'updated_date']:
+        ser = pd.to_datetime(df[col], errors='coerce')
+        if hasattr(ser.dt, 'tz') and ser.dt.tz is not None:
+            df[col] = ser.dt.tz_localize(None)
+        else:
+            df[col] = ser
+
+    # Infer completion date: actual_end_date > first_completed_at > updated_date
+    completion_date = df['actual_end_date'].copy()
+    if first_completed is not None:
+        fc_map = first_completed.set_index('task_id')['first_completed_at']
+        completion_date = completion_date.fillna(
+            fc_map.dt.tz_localize(None).dt.normalize()
+        )
+    completion_date = completion_date.fillna(df['updated_date'].dt.normalize())
+
+    end_date = df['end_date']
+
+    # Source per row
+    target_source = np.select(
+        [
+            completed & has_actual,
+            completed & ~has_actual & (df['first_completed_at'].notna() if first_completed is not None else False),
+            completed & ~has_actual & (df['first_completed_at'].isna() if first_completed is not None else True),
+            ~df['status'].isin(['completed', 'terminated', 'archived']) & (end_date < cutoff),
+        ],
+        [
+            'actual_end_date',
+            'history_completion',
+            'updated_date',
+            'open_task',
+        ],
+        default='status_based'
+    )
+
+    overdue_flag = np.where(
+        completed & (completion_date > end_date),
         1,
         np.where(
             ~df['status'].isin(['completed', 'terminated', 'archived'])
-            & (df['end_date'] < pd.Timestamp.today().normalize()),
+            & (end_date < cutoff),
             1, 0
         )
     )
+
+    return pd.DataFrame({
+        'calculated_overdue': overdue_flag,
+        'target_source': target_source,
+    })
 
 
 def compute_planned_duration(df):
@@ -50,11 +95,11 @@ def compute_creation_to_planned_start(df):
 
 
 def compute_days_since_update(df):
-    """days_since_update = today - updated_date (in days).
+    """days_since_update = cutoff - updated_date (in days).
 
-    Uses current date (pd.Timestamp.today().normalize()) as reference.
+    Uses fixed cutoff date (2026-07-14) as reference for reproducibility.
     """
-    return (pd.Timestamp.today().normalize() - df['updated_date']).dt.days
+    return (FIXED_CUTOFF.normalize() - df['updated_date']).dt.days
 
 
 def compute_halfway_date(df):
@@ -97,7 +142,7 @@ def compute_revision_features(rev_df, task_age_map):
     result['task_age_days'] = result['task_id'].map(task_age_map).fillna(0).clip(lower=1)
     result['revision_frequency'] = result['num_revisions'] / result['task_age_days']
     result['revision_recency'] = (
-        pd.Timestamp.today().normalize() - result['last_revision']
+        FIXED_CUTOFF.normalize() - result['last_revision']
     ).dt.days
     return result[['task_id', 'num_revisions', 'revision_frequency', 'revision_recency']]
 
