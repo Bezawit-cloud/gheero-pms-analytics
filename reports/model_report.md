@@ -2,7 +2,7 @@
 
 **Project:** PMS Task Overdue Prediction Model  
 **Notebook:** `notebooks/v1_model.ipynb`  
-**Dataset:** `data/v1/dataset_at_halfway.csv` (13,895 rows × 51 features)  
+**Dataset:** `data/raw/dataset_at_halfway.csv` (13,895 rows × 51 features)  
 **Target:** `calculated_overdue` (20.1% baseline overdue rate)  
 
 ---

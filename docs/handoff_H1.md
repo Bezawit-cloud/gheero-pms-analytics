@@ -6,8 +6,8 @@ The final analytical dataset contains **13,895 rows** (one per task) and **51 co
 
 | Variant | Rows | Columns | Description |
 |---------|------|---------|-------------|
-| `dataset_at_creation.csv` | 13,895 | 36 | Features known when a task is first created/assigned |
-| `dataset_at_halfway.csv` | 13,895 | 51 | Adds 15 features that accumulate during execution (available at halfway point) |
+| `data/raw/dataset_at_creation.csv` | 13,895 | 36 | Features known when a task is first created/assigned |
+| `data/raw/dataset_at_halfway.csv` | 13,895 | 51 | Adds 15 features that accumulate during execution (available at halfway point) |
 
 ## Data Sources (All Tables Used)
 

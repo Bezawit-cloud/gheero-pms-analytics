@@ -2,15 +2,6 @@
 
 Predict whether a project task will be overdue using historical project management data.
 
-## Branching
-
-| Branch | Purpose |
-|--------|---------|
-| `main` | Production — tagged releases |
-| `staging` | Integration branch — `dev-data` and `dev-eda-modeling` are merged here for end-to-end testing before release |
-| `dev-data` | Data tasks — building the analytical dataset (CSV), SQL queries, data quality checks, and all data preparation for modeling |
-| `dev-eda-modeling` | Phase 2 — EDA & modeling |
-
 ## Local Setup
 
 ```bash
@@ -31,62 +22,53 @@ pms-overdue-prediction/
 ├── .gitignore                         # Ignored files
 │
 ├── sql/                               # SQL queries
-│   ├── analytical_dataset.sql         #   Full dataset extraction
-│   ├── data_quality_checks.sql        #   Data quality validation queries
-│   └── performance_metrics.sql        #   Overdue KPI queries
+│   ├── analytical_dataset.sql         #   Full dataset extraction (leaky)
+│   ├── analytical_dataset_leak_fixed.sql #   Leak-fixed extraction
+│   └── data_quality_checks.sql        #   Data quality validation queries
 │
 ├── src/                               # Source code
-│   ├── feature_engineering.py         #   Feature creation functions
-│   ├── build_features.py              #   End-to-end feature pipeline
-│   ├── train.py                       #   Model training
-│   ├── evaluate.py                    #   Model evaluation
-│   └── error_analysis.py              #   Error analysis
+│   ├── build_features.py              #   End-to-end feature pipeline (leaky)
+│   ├── build_features_leak_fixed.py   #   Leak-fixed pipeline
+│   └── feature_engineering.py         #   Feature creation functions
 │
 ├── notebooks/                         # Jupyter notebooks
-│   ├── 05_eda.ipynb                   #   Exploratory data analysis
-│   └── pms_analysis_and_modeling.ipynb #   End-to-end analysis
+│   ├── exploration/                   #   EDA and table exploration
+│   ├── pipeline/                      #   Dataset building
+│   ├── training/                      #   Model training
+│   └── archive/                       #   Superseded notebooks
 │
 ├── models/                            # Serialized model artifacts
-│   ├── lr_model.pkl                   #   Trained Logistic Regression
-│   ├── scaler.pkl                     #   Fitted StandardScaler
-│   ├── label_encoder.pkl              #   Fitted LabelEncoder
-│   ├── features_list.pkl              #   Selected feature names
-│   └── num_cols.pkl                   #   Numeric column list
+│   └── *.joblib / *.pkl               #   Trained models
 │
 ├── reports/                           # Reports and visualizations
 │   ├── ER-Diagram.png                 #   Entity relationship diagram
+│   ├── EDA_findings.md                #   EDA findings report
+│   ├── model_report.md                #   Model comparison report (leaky data)
+│   ├── model_report_clean_data.md     #   Model report (clean leak-free data)
+│   └── model_report_fixed_end_date.md #   Model report (fixed target data)
+│
+├── pdf/                               # Compiled PDF reports
 │   ├── technical_report.pdf           #   Comprehensive technical report
 │   ├── management_summary.pdf         #   Executive summary
+│   ├── feature_analysis.pdf           #   Feature analysis
 │   ├── annotated_walkthrough.pdf      #   File-by-file guide
-│   ├── modeling_report.md             #   Model comparison report
-│   ├── error_analysis.md              #   Error root cause analysis
-│   ├── feature_engineering.md         #   Feature documentation
-│   ├── confusion_matrix_*.png         #   Confusion matrices
-│   ├── loss_curves.png                #   Training/validation loss curves
-│   └── figure_4.png                   #   Report figure
-│
-├── answers/                           # Q&A documentation
-│   ├── reasoning_questions.md         #   Reasoning Q&A
-│   └── defense_answers.pdf            #   Defense preparation
+│   └── connect_db.pdf                 #   Database connection guide
 │
 ├── tests/                             # Test suite
 │   ├── test_data_validation_sql.py    #   SQL validation tests
-│   ├── test_feature_engineering.py    #   Feature engineering tests
-│   ├── test_model.py                  #   Model tests
-│   └── test_reporting.py             #   Reporting tests
+│   ├── test_data_validation_leak_fixed.py # Leak-fixed validation tests
+│   └── test_feature_engineering.py    #   Feature engineering tests
 │
 ├── data/                              # Datasets
-│   ├── analytical_dataset.csv         #   Phase 1 output — one row per task
-│   ├── analytical_dataset_with_features.csv # Final dataset with engineered features
-│   └── .gitkeep
+│   ├── raw/                           #   Original unmodified CSVs
+│   ├── fixed_end_date/                #   Three-tier target fix
+│   └── clean/                         #   Leak-free feature-engineered CSVs
 │
 └── docs/                              # Documentation and handoffs
+    ├── handoff.md                     #   Master feature pipeline report
     ├── handoff_H1.md                  #   Dataset schema documentation
-    ├── handoff_H2.md                  #   ER diagram documentation
-    ├── handoff_H3.md                  #   Feature documentation
-    ├── handoff_H4.md                  #   Model documentation
+    ├── handoff_H2.md                  #   ER diagram / join strategy
     ├── handoff_H5.md                  #   Data quality findings
-    ├── handoff_H6.md                  #   Error analysis documentation
-    ├── branching_strategy.md          #   Branching workflow
+    ├── feature_and_leakage_documentation.pdf # Leakage fix reference
     └── contributing.pdf               #   Contribution guide
 ```

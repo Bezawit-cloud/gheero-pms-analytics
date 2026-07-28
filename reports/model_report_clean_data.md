@@ -1,7 +1,7 @@
 # Production Model Benchmark Report — Clean Leak-Free Dataset (`v1`)
 
 **Notebooks:** `notebooks/v1_model_fixed_data_halfway_clean_data.ipynb` & `notebooks/v1_model_at_creation_clean_data.ipynb`  
-**Datasets:** `data/v1/dataset_at_halfway_clean.csv` & `data/v1/dataset_at_creation_clean.csv` (13,895 rows each)  
+**Datasets:** `data/clean/dataset_at_halfway_clean.csv` & `data/clean/dataset_at_creation_clean.csv` (13,895 rows each)  
 **Target:** `calculated_overdue` (47.81% baseline overdue rate — 6,643 overdue tasks)  
 **Saved Models:** `models/v1_halfway_clean_gradientboosting.joblib` & `models/v1_creation_clean_randomforest.joblib`
 

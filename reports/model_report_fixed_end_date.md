@@ -1,7 +1,7 @@
 # Production Model Benchmark Report — Fixed End Date Dataset (`v1`)
 
 **Notebooks:** `notebooks/v1_model_fixed_data_halfway.ipynb` & `notebooks/v1_model_fixed_data_at_creation.ipynb`  
-**Dataset:** `data/v1/dataset_at_creation_fixed_end_date.csv` & `dataset_at_halfway_fixed_end_date.csv` (13,895 rows)  
+**Dataset:** `data/fixed_end_date/dataset_at_creation_fixed_end_date.csv` & `data/fixed_end_date/dataset_at_halfway_fixed_end_date.csv` (13,895 rows)  
 **Target:** `calculated_overdue` (47.81% true baseline overdue rate — 6,643 overdue tasks)  
 **Saved Models:** `models/v1_creation_fixed_randomforest.joblib` & `models/v1_halfway_fixed_extratrees.joblib`
 

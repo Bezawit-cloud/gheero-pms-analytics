@@ -1,7 +1,7 @@
 # EDA Findings Report — PMS Task Overdue Prediction
 
 **Notebook:** `notebooks/v1_EDA.ipynb`  
-**Datasets:** `data/v1/dataset_at_creation.csv` (36 features) · `data/v1/dataset_at_halfway.csv` (51 features)  
+**Datasets:** `data/raw/dataset_at_creation.csv` (36 features) · `data/raw/dataset_at_halfway.csv` (51 features)  
 **Tasks:** 13,895 · **Target:** `calculated_overdue` (binary)
 
 ---
