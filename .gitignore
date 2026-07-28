@@ -5,8 +5,6 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 /pdf
-models/*
-!models/.gitkeep
 !docs/contributing.pdf
 /venv
 .pytest_cache/
