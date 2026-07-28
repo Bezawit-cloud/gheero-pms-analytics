@@ -1,10 +1,7 @@
-"""Feature creation functions for PMS task overdue prediction.
+"""Feature creation and preprocessing functions for PMS task overdue prediction.
 
-Mirrors the logic in notebooks/clean_and_build_dataset.ipynb exactly.
+Mirrors the logic in clean datasets and modeling notebooks.
 Each function operates on a DataFrame and returns a Series or DataFrame.
-
-Usage:
-    from src.feature_engineering import compute_target, compute_temporal_features
 """
 
 import pandas as pd
@@ -13,22 +10,50 @@ import numpy as np
 FIXED_CUTOFF = pd.Timestamp('2026-07-14')
 
 
+def preprocess_clean_creation_features(df_input):
+    """Preprocess features for Creation Checkpoint (T0)."""
+    df = df_input.copy()
+
+    if 'planned_duration' in df.columns:
+        df['planned_duration'] = df['planned_duration'].clip(lower=0)
+
+    cols_to_drop = [
+        'id', 'target_source', 'status_encoded', 'approval_status_encoded',
+        'lead_approval_status_encoded', 'ma_status_encoded', 'ma_approval_status_encoded',
+        'created_is_weekend', 'created_is_friday'
+    ]
+    return df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors='ignore')
+
+
+def preprocess_clean_halfway_features(df_input):
+    """Preprocess features for Halfway Checkpoint (Tmid)."""
+    df = df_input.copy()
+
+    if 'planned_duration' in df.columns:
+        df['planned_duration'] = df['planned_duration'].clip(lower=0)
+
+    if 'num_ma_revisions' in df.columns:
+        df['num_ma_revisions'] = df['num_ma_revisions'].clip(upper=78)
+    if 'num_revisions' in df.columns:
+        df['num_revisions'] = df['num_revisions'].clip(upper=9)
+
+    if 'planned_duration' in df.columns and 'num_revisions' in df.columns:
+        df['duration_revision_intensity'] = df['num_revisions'] / (df['planned_duration'] + 1)
+
+    cols_to_drop = [
+        'id', 'target_source', 'status_encoded', 'approval_status_encoded',
+        'lead_approval_status_encoded', 'ma_status_encoded', 'ma_approval_status_encoded',
+        'subtask_completion_pct', 'subtask_overdue_rate', 'created_is_weekend', 'created_is_friday'
+    ]
+    return df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors='ignore')
+
+
 def compute_target(df, first_completed=None):
-    """Compute calculated_overdue target and target_source using three-tier logic.
-
-    Tier 1: actual_end_date exists -> compare directly to end_date.
-    Tier 2: no actual_end_date, but history shows status='completed' ->
-            use first_completed_at (first occurrence) as completion date.
-    Tier 3: no actual_end_date, no history -> use updated_date as proxy.
-
-    Returns:
-        DataFrame with columns [calculated_overdue, target_source]
-    """
+    """Compute calculated_overdue target and target_source using three-tier logic."""
     cutoff = FIXED_CUTOFF.normalize()
     completed = df['status'] == 'completed'
     has_actual = df['actual_end_date'].notna()
 
-    # Ensure all date columns are tz-naive datetime64 to avoid mixing tz-aware/naive
     for col in ['actual_end_date', 'end_date', 'updated_date']:
         ser = pd.to_datetime(df[col], errors='coerce')
         if hasattr(ser.dt, 'tz') and ser.dt.tz is not None:
@@ -36,7 +61,6 @@ def compute_target(df, first_completed=None):
         else:
             df[col] = ser
 
-    # Infer completion date: actual_end_date > first_completed_at > updated_date
     completion_date = df['actual_end_date'].copy()
     if first_completed is not None:
         fc_map = first_completed.set_index('task_id')['first_completed_at']
@@ -44,10 +68,8 @@ def compute_target(df, first_completed=None):
             fc_map.dt.tz_localize(None).dt.normalize()
         )
     completion_date = completion_date.fillna(df['updated_date'].dt.normalize())
-
     end_date = df['end_date']
 
-    # Source per row
     target_source = np.select(
         [
             completed & has_actual,
@@ -86,38 +108,23 @@ def compute_planned_duration(df):
 
 
 def compute_creation_to_planned_start(df):
-    """creation_to_planned_start = start_date - created_date (in days).
-
-    Negative values mean the task started before it was formally created
-    (retroactive scheduling). Positive values mean planning ahead.
-    """
+    """creation_to_planned_start = start_date - created_date (in days)."""
     return (df['start_date'] - df['created_date']).dt.days
 
 
 def compute_days_since_update(df):
-    """days_since_update = cutoff - updated_date (in days).
-
-    Uses fixed cutoff date (2026-07-14) as reference for reproducibility.
-    """
+    """days_since_update = cutoff - updated_date (in days)."""
     return (FIXED_CUTOFF.normalize() - df['updated_date']).dt.days
 
 
 def compute_halfway_date(df):
-    """halfway_date = start_date + planned_duration / 2.
-
-    Used as prediction point for the halfway model variant.
-    """
+    """halfway_date = start_date + planned_duration / 2."""
     duration = compute_planned_duration(df)
     return df['start_date'] + pd.to_timedelta(duration / 2, unit='D')
 
 
 def compute_created_time_features(df):
-    """Derive dayofweek, weekend, friday, month, quarter from created_date.
-
-    Returns:
-        DataFrame with columns: created_dow, created_is_weekend,
-        created_is_friday, created_month, created_quarter
-    """
+    """Derive dow, weekend, friday, month, quarter from created_date."""
     dow = df['created_date'].dt.dayofweek
     return pd.DataFrame({
         'created_dow': dow,
@@ -129,15 +136,7 @@ def compute_created_time_features(df):
 
 
 def compute_revision_features(rev_df, task_age_map):
-    """Compute revision_frequency and revision_recency.
-
-    Args:
-        rev_df: DataFrame with columns [task_id, num_revisions, last_revision]
-        task_age_map: Series mapping task_id -> age in days (from created_date)
-
-    Returns:
-        DataFrame with columns [task_id, num_revisions, revision_frequency, revision_recency]
-    """
+    """Compute revision_frequency and revision_recency."""
     result = rev_df.copy()
     result['task_age_days'] = result['task_id'].map(task_age_map).fillna(0).clip(lower=1)
     result['revision_frequency'] = result['num_revisions'] / result['task_age_days']
@@ -148,15 +147,7 @@ def compute_revision_features(rev_df, task_age_map):
 
 
 def compute_subtask_features(sub_df):
-    """Compute subtask completion pct and overdue rate.
-
-    Args:
-        sub_df: DataFrame with columns [task_id, num_subtasks,
-                num_completed_subtasks, num_overdue_subtasks]
-
-    Returns:
-        DataFrame with computed rates added.
-    """
+    """Compute subtask completion pct and overdue rate."""
     result = sub_df.copy()
     result['subtask_completion_pct'] = (
         result['num_completed_subtasks'] / result['num_subtasks']
@@ -168,15 +159,7 @@ def compute_subtask_features(sub_df):
 
 
 def compute_subtask_halfway_features(halfway_sub_df):
-    """Compute subtask_completion_pct_at_halfway.
-
-    Args:
-        halfway_sub_df: DataFrame with columns [task_id, num_subtasks_at_halfway,
-                         num_completed_at_halfway]
-
-    Returns:
-        DataFrame with subtask_completion_pct_at_halfway added.
-    """
+    """Compute subtask_completion_pct_at_halfway."""
     result = halfway_sub_df.copy()
     result['subtask_completion_pct_at_halfway'] = (
         result['num_completed_at_halfway'] / result['num_subtasks_at_halfway']
@@ -190,11 +173,7 @@ def ordinal_encode_status(df, col, mapping, fallback=1):
 
 
 def target_encode(df, group_col, target_col, unknown_value=None):
-    """Target encode a categorical column.
-
-    Returns:
-        Series: encoded values, one per row of df.
-    """
+    """Target encode a categorical column."""
     rates = df.groupby(group_col)[target_col].mean()
     encoded = df[group_col].map(rates)
     if unknown_value is not None:
