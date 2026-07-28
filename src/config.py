@@ -54,9 +54,12 @@ COLOR_SUCCESS = "#2ca02c"
 COLOR_WARNING = "#ff7f0e"
 COLOR_NEUTRAL = "#7f7f7f"
 
+# NOTE: keys must match analytics.DEPT_RISK_LABELS exactly — these are the
+# reconstructed department risk tiers (binned from dept_past_overdue_rate),
+# not a raw "department" column, which doesn't exist in the clean dataset.
 RISK_COLORS = {
-    "Critical (35%+)": "#d62728",
-    "High (20%-35%)": "#ff7f0e",
-    "Moderate (10%-20%)": "#bcbd22",
-    "Low (<10%)": "#2ca02c",
+    "Low Risk (0-10%)": "#2ca02c",
+    "Moderate (10-20%)": "#bcbd22",
+    "High (20-30%)": "#ff7f0e",
+    "Critical (>30%)": "#d62728",
 }

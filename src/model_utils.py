@@ -19,14 +19,37 @@ def load_scenario_model(scenario_key: str):
         return None
 
 
+def _get_expected_feature_names(model):
+    """Finds the trained feature-name list across different estimator APIs.
+
+    Plain scikit-learn estimators set `feature_names_in_` when fit on a
+    DataFrame. LightGBM's sklearn wrapper (LGBMClassifier — what this project
+    trains, per models/*_metrics.json) manages its own internal Dataset and
+    does NOT set `feature_names_in_`; it exposes `feature_name_` instead (and
+    the underlying Booster also exposes `.feature_name()`). Checking only
+    `feature_names_in_` silently falls through to using the raw, unaligned
+    input row (36 columns, including id/calculated_overdue/target_source)
+    against a 29-feature model, which raises the "n_features_ mismatch" error.
+    """
+    if hasattr(model, "feature_names_in_"):
+        return list(model.feature_names_in_)
+    if hasattr(model, "feature_name_"):
+        return list(model.feature_name_)
+    if hasattr(model, "booster_"):
+        try:
+            return list(model.booster_.feature_name())
+        except Exception:
+            pass
+    return None
+
+
 def predict_task_risk(model, input_row_df: pd.DataFrame) -> float:
-    """Strictly aligns input features to match the model's trained feature columns (29 features)."""
+    """Strictly aligns input features to match the model's trained feature columns."""
     if model is None:
         return 0.0
     try:
-        # If the model exposes training feature names, reindex the input row precisely to them
-        if hasattr(model, "feature_names_in_"):
-            expected_features = model.feature_names_in_
+        expected_features = _get_expected_feature_names(model)
+        if expected_features:
             # Reindex ensures missing columns are filled with 0 and extra columns are dropped
             inference_df = input_row_df.reindex(columns=expected_features, fill_value=0)
         else:
@@ -41,3 +64,4 @@ def predict_task_risk(model, input_row_df: pd.DataFrame) -> float:
     except Exception as e:
         st.error(f"Inference execution error: {e}")
         return 0.0
+    

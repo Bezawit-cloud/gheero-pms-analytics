@@ -1,6 +1,8 @@
 import streamlit as st
-from ui_components import render_header
 import pandas as pd
+import plotly.express as px
+from config import COLOR_PRIMARY
+from ui_components import render_header, render_insight
 
 
 def render(df: pd.DataFrame):
@@ -10,7 +12,9 @@ def render(df: pd.DataFrame):
         " governance guidelines.",
     )
 
-    tab1, tab2 = st.tabs(["📊 Data Health & EDA", "⚖️ AI Ethics & Governance"])
+    tab1, tab2, tab3 = st.tabs(
+        ["📊 Data Health", "🔎 Key EDA Findings", "⚖️ AI Ethics & Governance"]
+    )
 
     with tab1:
         st.subheader("Dataset Integrity Auditing")
@@ -18,22 +22,81 @@ def render(df: pd.DataFrame):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total Rows", f"{len(df):,}")
-                st.metric(
-                    "Missing Values Count", int(df.isnull().sum().sum())
-                )
+                st.metric("Missing Values Count", int(df.isnull().sum().sum()))
             with col2:
                 st.metric("Total Columns", f"{df.shape[1]}")
-                st.metric(
-                    "Duplicate Rows", int(df.duplicated().sum())
-                )
+                st.metric("Duplicate Rows", int(df.duplicated().sum()))
 
             st.markdown("#### Column Data Types & Non-Null Counts")
-            buffer = io_buffer_info(df)
-            st.dataframe(buffer, use_container_width=True)
+            st.dataframe(_column_info(df), use_container_width=True)
         else:
             st.info("No dataset loaded.")
 
     with tab2:
+        st.subheader("Findings Carried Over from Exploratory Analysis")
+        if df.empty:
+            st.info("No dataset loaded.")
+        else:
+            if "target_source" in df.columns:
+                st.markdown("#### How the Overdue Label Was Determined")
+                st.caption(
+                    "`calculated_overdue` is derived, not stored directly — each row's "
+                    "label comes from one of three signals depending on task state."
+                )
+                source_counts = (
+                    df["target_source"]
+                    .value_counts()
+                    .rename_axis("Target Source")
+                    .reset_index(name="Num Tasks")
+                )
+                fig_source = px.bar(
+                    source_counts,
+                    x="Target Source",
+                    y="Num Tasks",
+                    color_discrete_sequence=[COLOR_PRIMARY],
+                    title="Overdue Label Source Breakdown",
+                )
+                fig_source.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig_source, use_container_width=True)
+                render_insight(
+                    "The overdue label is reconstructed per-task from status, update date, "
+                    "or actual end date rather than pulled from a single stored field. Any "
+                    "future data pipeline change to how these dates are recorded should be "
+                    "re-validated against this labeling logic before retraining."
+                )
+
+            if "planned_duration" in df.columns:
+                negative_duration = int((df["planned_duration"] < 0).sum())
+                st.markdown("#### Planned Duration Anomalies")
+                st.metric("Tasks with Negative Planned Duration", negative_duration)
+                if negative_duration:
+                    render_insight(
+                        f"{negative_duration} task(s) have a planned end date earlier than "
+                        f"their start date — a data-entry error at the source, not a modeling "
+                        f"artifact. These get clipped to 0 rather than dropped, since they're a "
+                        f"negligible share of the data."
+                    )
+
+            if "num_ma_revisions" in df.columns:
+                p99 = df["num_ma_revisions"].quantile(0.99)
+                extreme = int((df["num_ma_revisions"] > 1000).sum())
+                st.markdown("#### Revision Count Outliers")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("99th Percentile (num_ma_revisions)", f"{p99:.0f}")
+                with col_b:
+                    st.metric("Tasks Above 1,000 Revisions", extreme)
+                if extreme:
+                    render_insight(
+                        "A small number of tasks show revision counts far beyond what a human "
+                        "could plausibly generate — most likely a system logging loop rather "
+                        "than genuine churn. These are capped at the 99th percentile before "
+                        "training so they don't distort distance-based or linear model families."
+                    )
+
+    with tab3:
         st.subheader("Responsible AI & Management Guardrails")
         st.info(
             "**Core Ethical Principle:** Predictions generated by Gheero PMS"
@@ -51,14 +114,11 @@ def render(df: pd.DataFrame):
         )
 
 
-def io_buffer_info(df):
-    import pandas as pd
-
-    inf = pd.DataFrame(
+def _column_info(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
         {
             "Column": df.columns,
             "Non-Null Count": df.notnull().sum().values,
             "Dtype": df.dtypes.astype(str).values,
         }
     )
-    return inf

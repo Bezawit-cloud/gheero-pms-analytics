@@ -1,6 +1,7 @@
 import streamlit as st
 from config import SCENARIOS
 from data_loader import load_scenario_dataset
+from ui_components import inject_custom_css
 import dashboard
 import predictor
 import model_performance
@@ -12,6 +13,8 @@ st.set_page_config(
 
 
 def main():
+    inject_custom_css()
+
     st.sidebar.title("Gheero PMS Navigation")
 
     # Scenario Switcher (At Creation vs Halfway)
@@ -21,11 +24,13 @@ def main():
     )
 
     # Reverse lookup scenario key from display name
-    scenario_key = "creation"
-    for key, config in SCENARIOS.items():
-        if config["display_name"] == selected_scenario_label:
-            scenario_key = key
-            break
+    scenario_key = next(
+        (key for key, cfg in SCENARIOS.items() if cfg["display_name"] == selected_scenario_label),
+        "creation",
+    )
+
+    st.sidebar.caption(f"Active dataset: `{scenario_key}`")
+    st.sidebar.markdown("---")
 
     # Module Navigation Selector
     app_mode = st.sidebar.radio(
