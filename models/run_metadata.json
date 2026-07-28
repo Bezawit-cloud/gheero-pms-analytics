@@ -1,0 +1,6 @@
+{
+  "creation_best_model": "LightGBM",
+  "halfway_best_model": "LightGBM",
+  "random_state": 42,
+  "split": "70/15/15 stratified"
+}
