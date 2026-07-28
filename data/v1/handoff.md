@@ -4,7 +4,7 @@
 
 This report documents the data preparation phase: how each feature is created, how missing values are handled, null rates, imputation rationale, and modeling relevance.
 
-Two analysis-ready datasets are produced:
+Two analysis-ready datasets are produced (original, leaky versions):
 
 | Variant | File | Rows | Cols | Purpose |
 |---|---|---|---|---|
@@ -12,6 +12,13 @@ Two analysis-ready datasets are produced:
 | Creation-time (fixed target) | `data/v1/dataset_at_creation_fixed_end_date.csv` | 13,895 | 29 | Same but with three-tier target (47.8% overdue) |
 | Halfway | `data/v1/dataset_at_halfway.csv` | 13,895 | 51 | Creation + 15 accumulation features (available at midpoint) |
 | Halfway (fixed target) | `data/v1/dataset_at_halfway_fixed_end_date.csv` | 13,895 | 44 | Same but with three-tier target (47.8% overdue) |
+
+**Leak-fixed versions** (all features are cutoff-date-aware, 8 challenge features dropped, `position_id_encoded` excluded):
+
+| Variant | File | Rows | Cols | Purpose |
+|---|---|---|---|---|
+| Creation-time (clean) | `data/v1/dataset_at_creation_clean.csv` | 13,895 | 29 | Leak-free features known at task creation |
+| Halfway (clean) | `data/v1/dataset_at_halfway_clean.csv` | 13,895 | 40 | Leak-free features at task midpoint |
 
 Both share the same 13,895 tasks and the same target `calculated_overdue` (47.8% overdue rate).
 
@@ -107,9 +114,11 @@ All joins are LEFT JOIN from `tasks_task` (preserving all 13,895 tasks). All 1:N
 
 ## Implemented Pipeline
 
-Pipeline source: [`src/v1/build_features.py`](../src/v1/build_features.py)  
+Pipeline source (leaky): [`src/v1/build_features.py`](../src/v1/build_features.py)  
+Leak-fixed pipeline: [`src/v1/build_features_leak_fixed.py`](../src/v1/build_features_leak_fixed.py)  
 Reusable feature functions: [`src/v1/feature_engineering.py`](../src/v1/feature_engineering.py)  
-ETL SQL: [`sql/v1/analytical_dataset.sql`](../sql/v1/analytical_dataset.sql)  
+ETL SQL (leaky): [`sql/v1/analytical_dataset.sql`](../sql/v1/analytical_dataset.sql)  
+Leak-fixed SQL: [`sql/v1/analytical_dataset_leak_fixed.sql`](../sql/v1/analytical_dataset_leak_fixed.sql)  
 Data quality SQL: [`sql/v1/data_quality_checks.sql`](../sql/v1/data_quality_checks.sql)  
 Relationship docs: [`docs/handoff_H2.md`](../docs/handoff_H2.md)  
 Data quality docs: [`docs/handoff_H5.md`](../docs/handoff_H5.md)  
@@ -479,12 +488,16 @@ If building a strictly time-aware halfway model, the `subtask_completion_pct_at_
 ## References
 
 - [`notebooks/v1/explore_tasks_task.ipynb`](../notebooks/v1/explore_tasks_task.ipynb) — target definition exploration & overdue analysis
-- [`notebooks/v1/clean_and_build_dataset.ipynb`](../notebooks/v1/clean_and_build_dataset.ipynb) — end-to-end dataset construction notebook
+- [`notebooks/v1/clean_and_build_dataset.ipynb`](../notebooks/v1/clean_and_build_dataset.ipynb) — end-to-end dataset construction (leaky version)
+- [`notebooks/v1/clean_and_build_dataset_leak_fixed.ipynb`](../notebooks/v1/clean_and_build_dataset_leak_fixed.ipynb) — end-to-end dataset construction (leak-fixed version)
+- [`notebooks/v1/leakage_fix_pipeline.ipynb`](../notebooks/v1/leakage_fix_pipeline.ipynb) — leakage analysis & mitigation validation
 - [`notebooks/v1/feature_analysis.ipynb`](../notebooks/v1/feature_analysis.ipynb) — feature analysis and impact exploration
 - [`docs/handoff_H1.md`](../docs/handoff_H1.md) — dataset schema & data sources (full feature inventory with types)
 - [`docs/handoff_H2.md`](../docs/handoff_H2.md) — table relationships & join strategy (PK/FK matrix, resolution cascades)
 - [`docs/handoff_H5.md`](../docs/handoff_H5.md) — data quality findings (null rates, sparsity, date integrity)
-- [`src/v1/build_features.py`](../src/v1/build_features.py) — end-to-end pipeline
+- [`src/v1/build_features.py`](../src/v1/build_features.py) — end-to-end pipeline (leaky version)
+- [`src/v1/build_features_leak_fixed.py`](../src/v1/build_features_leak_fixed.py) — leak-free pipeline
 - [`src/v1/feature_engineering.py`](../src/v1/feature_engineering.py) — reusable feature functions
-- [`sql/v1/analytical_dataset.sql`](../sql/v1/analytical_dataset.sql) — full extraction SQL
+- [`sql/v1/analytical_dataset.sql`](../sql/v1/analytical_dataset.sql) — full extraction SQL (leaky version)
+- [`sql/v1/analytical_dataset_leak_fixed.sql`](../sql/v1/analytical_dataset_leak_fixed.sql) — leak-free SQL reference
 - [`sql/v1/data_quality_checks.sql`](../sql/v1/data_quality_checks.sql) — 15+ validation checks
